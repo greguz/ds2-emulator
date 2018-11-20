@@ -262,11 +262,11 @@ void configModeRoutine() {
 void setup() {
   // enable input for CLK, ATT, MOSI
   // enable output for MISO, ACK
-  DDRD = DDRD | B00111000;
+  DDRD = DDRD | B01100000;
 
   // MISO is normally high
   // ACK is normally high
-  PORTD = PORTD | B00000110;
+  PORTD = PORTD | B01100000;
 }
 
 void loop() {
