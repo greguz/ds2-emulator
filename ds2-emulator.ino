@@ -10,10 +10,10 @@
 // - D6 > ACK (green)
 
 // Bit manipulation utils
-#define SET(x,y) (x|=(1<<y))  // Set bit y in x
+#define SET(x,y) (x|=(1<<y))    // Set bit y in x
 #define CLR(x,y) (x&=(~(1<<y))) // Clear bit y in x
 #define CHK(x,y) (x & (1<<y))   // Check if bit y in x is set
-#define TGL(x,y) (x^=(1<<y))  // Toggle bit y in x
+#define TGL(x,y) (x^=(1<<y))    // Toggle bit y in x
 
 // MOSI buffer (PS2 > controller)
 unsigned char CMD[21] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -63,7 +63,7 @@ unsigned char byteRoutine(unsigned char tx) {
       CLR(PORTD, 5);
     }
 
-    // wait unti CLK is high
+    // wait until CLK is high
     while (!CHK(PIND, 2));
 
     // read and save MOSI pin
@@ -76,7 +76,7 @@ unsigned char byteRoutine(unsigned char tx) {
   SET(PORTD, 5);
 
   // send ACK signal
-  delayMicroseconds(10);
+  delayMicroseconds(10); // not sure
   CLR(PORTD, 6);
   delayMicroseconds(3); // not sure
   SET(PORTD, 6);
@@ -252,7 +252,7 @@ void configModeRoutine() {
         MAP[2] = CMD[5];
         // update the payload length
         MODE &= B11110000;
-        MODE |= countSetBits(MAP[0]) + countSetBits(MAP[1]) + countSetBits(MAP[2]);
+        MODE |= (countSetBits(MAP[0]) + countSetBits(MAP[1]) + countSetBits(MAP[2]) / 2);
       }
       break;
 
