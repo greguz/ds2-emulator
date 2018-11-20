@@ -40,13 +40,13 @@ unsigned char MODE = 0x41;
 // TODO: docs
 unsigned char MAP[3] = { B00000011, B00000000, B00000000 };
 
-int countSetBits(int n) { 
+int countSetBits(int n) {
   if (n == 0) {
     return 0;
   } else {
     return 1 + countSetBits(n & (n - 1));
   }
-} 
+}
 
 unsigned char byteRoutine(unsigned char tx) {
   unsigned char rx = 0x00;
@@ -238,7 +238,7 @@ void configModeRoutine() {
       CMD[8] = byteRoutine(0xFF);
       break;
 
-    // add or remove analog response bytes from the main polling command 
+    // add or remove analog response bytes from the main polling command
     case 0x4F:
       CMD[3] = byteRoutine(0x00);
       CMD[4] = byteRoutine(0x00);
@@ -279,4 +279,3 @@ void loop() {
     }
   }
 }
-
