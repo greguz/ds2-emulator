@@ -1,4 +1,5 @@
 // Protocol details
+// https://gist.github.com/scanlime/5042071
 // http://store.curiousinventor.com/guides/PS2/
 // http://www.lynxmotion.com/images/files/ps2cmd01.txt
 
@@ -153,7 +154,23 @@ void configRoutine() {
   // Send the other 6 bytes (in config mode the payload is fixed)
   switch(CMD[1]) {
 
-    // TODO: case 0x40: break;
+    // Initialize pressure sensor
+    case 0x40:
+      CMD[3] = byteRoutine(0x00);
+      CMD[4] = byteRoutine(0x00);
+      CMD[5] = byteRoutine(0x02);
+      CMD[6] = byteRoutine(0x00);
+      CMD[7] = byteRoutine(0x00);
+      CMD[8] = byteRoutine(0x5A);
+      // TODO:
+      // CMD > 01 40 00 | 00 02 00 00 00 00
+      // DAT > ff f3 5a | 00 00 02 00 00 5a
+      // (first payload byte of CMD, 0x00 - 0x0b, in the same order that the buttons are listed in the response packet)
+      // This command sets up parameters for a single pressure-sensitive button.
+      // Note that it is not required in order to use pressure sensitive buttons,
+      // and that this command by itself will not enable them.
+      // You still need to use command 0x4f to add them to the controller's results packet.
+      break;
 
     // Find out what buttons are included in poll responses
     case 0x41:
