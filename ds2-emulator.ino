@@ -40,7 +40,7 @@ unsigned int LMI = 22;
 // - - payloadh length
 unsigned char MODE = 0x41;
 
-// TODO: not sure because of command 0x41 and 0x4F
+// Payload length in bytes (MODE lower nibble * 2)
 unsigned int PAYLOAD_LENGTH = 2;
 
 // MOSI (Master Out Slave In) buffer
@@ -56,10 +56,10 @@ unsigned char CMD[21] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 unsigned char DAT[21] = { 0xFF, MODE, 0x5A, 0xFF, 0xFF, 0x7F, 0x7F, 0x7F, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 /**
- * TODO: docs
+ * Count set bits in an integer
  */
 
-int countSetBits(int n) {
+unsigned int countSetBits(unsigned int n) {
   if (n == 0) {
     return 0;
   } else {
@@ -71,7 +71,7 @@ int countSetBits(int n) {
  * Send a byte to MISO and receive a byte from MOSI
  */
 
-unsigned char byteRoutine(unsigned char tx) {
+unsigned char byteRoutine(unsigned char tx, bool ack = true) {
   unsigned char rx = 0x00;
 
   // transmit tx data and save incoming into rx
@@ -99,10 +99,12 @@ unsigned char byteRoutine(unsigned char tx) {
   bitSet(PORTD, 5);
 
   // send ACK signal
-  delayMicroseconds(10); // TODO: not sure
-  bitClear(PORTD, 6);
-  delayMicroseconds(3); // TODO: not sure
-  bitSet(PORTD, 6);
+  if (ack) {
+    delayMicroseconds(12);
+    bitClear(PORTD, 6);
+    delayMicroseconds(4);
+    bitSet(PORTD, 6);
+  }
 
   // Return the received byte
   return rx;
@@ -113,7 +115,8 @@ unsigned char byteRoutine(unsigned char tx) {
  */
 
 void normalRoutine() {
-  unsigned int length = 3 + PAYLOAD_LENGTH;
+  unsigned int index = 3;
+  unsigned int length = index + PAYLOAD_LENGTH;
 
   // Send the header
   CMD[0] = byteRoutine(0xFF);
@@ -121,9 +124,10 @@ void normalRoutine() {
   CMD[2] = byteRoutine(0x5A);
 
   // Send controller state data
-  for (unsigned int i = 3; i < length; i++) {
-    CMD[i] = byteRoutine(DAT[i]);
+  for (; index < length - 1; index++) {
+    CMD[index] = byteRoutine(DAT[index]);
   }
+  CMD[index] = byteRoutine(DAT[index], false);
 
   // Handle motors data
   if (SMI < length) {
@@ -161,7 +165,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x02);
       CMD[6] = byteRoutine(0x00);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x5A);
+      CMD[8] = byteRoutine(0x5A, false);
       // TODO:
       // CMD > 01 40 00 | 00 02 00 00 00 00
       // DAT > ff f3 5a | 00 00 02 00 00 5a
@@ -186,7 +190,7 @@ void configRoutine() {
       }
       CMD[6] = byteRoutine(0x00);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x5A);
+      CMD[8] = byteRoutine(0x5A, false);
       break;
 
     // Exit from config mode
@@ -196,7 +200,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x00);
       CMD[6] = byteRoutine(0x00);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00);
+      CMD[8] = byteRoutine(0x00, false);
       if (CMD[3] == 0x00) {
         CONFIG = false;
       }
@@ -209,7 +213,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x00);
       CMD[6] = byteRoutine(0x00);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00);
+      CMD[8] = byteRoutine(0x00, false);
       if (CMD[3] == 0x00) {
         ANALOG = false;
         MODE = 0x41;
@@ -229,7 +233,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(ANALOG ? 0x01 : 0x00);
       CMD[6] = byteRoutine(0x02);
       CMD[7] = byteRoutine(0x01);
-      CMD[8] = byteRoutine(0x00);
+      CMD[8] = byteRoutine(0x00, false);
       break;
 
     // Send unknown const
@@ -240,11 +244,11 @@ void configRoutine() {
       if (CMD[3] == 0x00) {
         CMD[6] = byteRoutine(0x02);
         CMD[7] = byteRoutine(0x00);
-        CMD[8] = byteRoutine(0x0A);
+        CMD[8] = byteRoutine(0x0A, false);
       } else {
         CMD[6] = byteRoutine(0x00);
         CMD[7] = byteRoutine(0x00);
-        CMD[8] = byteRoutine(0x14);
+        CMD[8] = byteRoutine(0x14, false);
       }
       break;
 
@@ -255,7 +259,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x02);
       CMD[6] = byteRoutine(0x00);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00);
+      CMD[8] = byteRoutine(0x00, false);
       break;
 
     // Send unknown const
@@ -265,7 +269,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x00);
       CMD[6] = byteRoutine(CMD[3] == 0x00 ? 0x04 : 0x06);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00);
+      CMD[8] = byteRoutine(0x00, false);
       break;
 
     // Map bytes in the 0x42 command to actuate the vibration motors
@@ -278,7 +282,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0xFF);
       CMD[6] = byteRoutine(0xFF);
       CMD[7] = byteRoutine(0xFF);
-      CMD[8] = byteRoutine(0xFF);
+      CMD[8] = byteRoutine(0xFF, false);
       // Reset the motors mapping
       SMI = 22;
       LMI = 22;
@@ -299,7 +303,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x00);
       CMD[6] = byteRoutine(0x00);
       CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x5A);
+      CMD[8] = byteRoutine(0x5A, false);
       if (ANALOG) {
         // Update the payload length
         PAYLOAD_LENGTH = countSetBits(CMD[3]) + countSetBits(CMD[4]) + countSetBits(CMD[5]);
@@ -316,7 +320,7 @@ void configRoutine() {
       CMD[5] = byteRoutine(0x5A);
       CMD[6] = byteRoutine(0x5A);
       CMD[7] = byteRoutine(0x5A);
-      CMD[8] = byteRoutine(0x5A);
+      CMD[8] = byteRoutine(0x5A, false);
       break;
 
   }
