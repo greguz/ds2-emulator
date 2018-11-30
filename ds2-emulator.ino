@@ -55,6 +55,9 @@ unsigned char CMD[21] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 // - 12 bytes > pressure data
 unsigned char DAT[21] = { 0xFF, MODE, 0x5A, 0xFF, 0xFF, 0x7F, 0x7F, 0x7F, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+// Bitfield indicating which bytes in the response packet should be included
+unsigned char MAP[3] = { 0x03, 0x00, 0x00 };
+
 /**
  * Count set bits in an integer
  */
@@ -179,10 +182,9 @@ void configRoutine() {
     // Find out what buttons are included in poll responses
     case 0x41:
       if (ANALOG) {
-        // TODO: fix this
-        // CMD[3] = byteRoutine(MAP[0]);
-        // CMD[4] = byteRoutine(MAP[1]);
-        // CMD[5] = byteRoutine(MAP[2]);
+        CMD[3] = byteRoutine(MAP[0]);
+        CMD[4] = byteRoutine(MAP[1]);
+        CMD[5] = byteRoutine(MAP[2]);
       } else {
         CMD[3] = byteRoutine(0x00);
         CMD[4] = byteRoutine(0x00);
@@ -218,10 +220,16 @@ void configRoutine() {
         ANALOG = false;
         MODE = 0x41;
         PAYLOAD_LENGTH = 2;
+        MAP[0] = 0x03;
+        MAP[1] = 0x00;
+        MAP[2] = 0x00;
       } else if (CMD[3] == 0x01) {
         ANALOG = true;
         MODE = 0x73;
         PAYLOAD_LENGTH = 6;
+        MAP[0] = 0x3F;
+        MAP[1] = 0x00;
+        MAP[2] = 0x00;
       }
       LOCKED = CMD[4] == 0x03;
       break;
@@ -310,6 +318,10 @@ void configRoutine() {
         // Update mode (only the lower nibble)
         MODE &= B11110000;
         MODE |= (PAYLOAD_LENGTH  / 2);
+        // Update mapping array
+        MAP[0] = CMD[3];
+        MAP[1] = CMD[4];
+        MAP[2] = CMD[5];
       }
       break;
 
