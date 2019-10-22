@@ -1,3 +1,13 @@
-# DualShock 2 emulator
+# DualShock 2 emulator for Arduino Uno
 
-This project is able to emulate a full DualShock 2 controller with an Arduino Uno (and probably other boards).
+Emulate a DS2 controller with Arduino Uno.
+
+## Wirings
+
+TODO
+
+## Protocol details
+
+- https://gist.github.com/scanlime/5042071
+- http://store.curiousinventor.com/guides/PS2/
+- http://www.lynxmotion.com/images/files/ps2cmd01.txt
