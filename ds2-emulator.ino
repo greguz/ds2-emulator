@@ -9,6 +9,9 @@
 // Config mode (has precedence)
 bool CONFIG = false;
 
+//
+bool NEXT_CONFIG = false;
+
 // Analog mode (pressure levels supported only on analog mode)
 bool ANALOG = false;
 
@@ -56,15 +59,19 @@ byte DATA_CFG[6] = {
 
 // Payload used during the other modes (represents buttons status)
 byte DATA_BTN[18] = {
-  // Digital buttons (0 is pressed)
-  0xFF, // Select, L3, R3, Start, Up, Right, Down, Left
-  0xFF, // L2, R2, L1, R1, Triangle, Circle, Cross, Square
+  // Left, Down, Right, Up, Start, R3, L3, Select (0 is pressed)
+  // 0xFE > Select is pressed
+  0xFF,
+
+  // Square, Cross, Circle, Triangle, R1, L1 ,R2, L2 (0 is pressed)
+  // 0xFE > L2 is pressed
+  0xFF,
 
   // Analog sticks
-  0x7F, // Right X-axis
-  0x7F, // Right Y-axis
-  0x7F, // Left X-axis
-  0x7F, // Left Y-axis
+  0x7F, // Right X-axis,  0x00 = Left,  0xFF = Right
+  0x7F, // Right Y-axis,  0x00 = Up,    0xFF = Down
+  0x7F, // Left X-axis,   0x00 = Left,  0xFF = Right
+  0x7F, // Left Y-axis,   0x00 = Up,    0xFF = Down
 
   // Pressure levels (0 is not pressed)
   0x00, // Right
@@ -84,19 +91,19 @@ byte DATA_BTN[18] = {
 /**
  * Sync pressure levels by reading from digital status
  */
-void syncPressureLelevs () {
-  DATA_BTN[ 7] = bitRead(DATA_BTN[0], 0) ? 0x00 : 0xFF; // Left
-  DATA_BTN[ 9] = bitRead(DATA_BTN[0], 1) ? 0x00 : 0xFF; // Down
-  DATA_BTN[ 6] = bitRead(DATA_BTN[0], 2) ? 0x00 : 0xFF; // Right
-  DATA_BTN[ 8] = bitRead(DATA_BTN[0], 3) ? 0x00 : 0xFF; // Up
-  DATA_BTN[13] = bitRead(DATA_BTN[1], 0) ? 0x00 : 0xFF; // Square
-  DATA_BTN[12] = bitRead(DATA_BTN[1], 1) ? 0x00 : 0xFF; // Cross
-  DATA_BTN[11] = bitRead(DATA_BTN[1], 2) ? 0x00 : 0xFF; // Circle
-  DATA_BTN[10] = bitRead(DATA_BTN[1], 3) ? 0x00 : 0xFF; // Triangle
-  DATA_BTN[15] = bitRead(DATA_BTN[1], 4) ? 0x00 : 0xFF; // R1
-  DATA_BTN[14] = bitRead(DATA_BTN[1], 5) ? 0x00 : 0xFF; // L1
-  DATA_BTN[17] = bitRead(DATA_BTN[1], 6) ? 0x00 : 0xFF; // R2
-  DATA_BTN[16] = bitRead(DATA_BTN[1], 7) ? 0x00 : 0xFF; // L2
+void syncPressureLevels () {
+  DATA_BTN[ 7] = bitRead(DATA_BTN[0], 7) ? 0x00 : 0xFF; // Left
+  DATA_BTN[ 9] = bitRead(DATA_BTN[0], 6) ? 0x00 : 0xFF; // Down
+  DATA_BTN[ 6] = bitRead(DATA_BTN[0], 5) ? 0x00 : 0xFF; // Right
+  DATA_BTN[ 8] = bitRead(DATA_BTN[0], 4) ? 0x00 : 0xFF; // Up
+  DATA_BTN[13] = bitRead(DATA_BTN[1], 7) ? 0x00 : 0xFF; // Square
+  DATA_BTN[12] = bitRead(DATA_BTN[1], 6) ? 0x00 : 0xFF; // Cross
+  DATA_BTN[11] = bitRead(DATA_BTN[1], 5) ? 0x00 : 0xFF; // Circle
+  DATA_BTN[10] = bitRead(DATA_BTN[1], 4) ? 0x00 : 0xFF; // Triangle
+  DATA_BTN[15] = bitRead(DATA_BTN[1], 3) ? 0x00 : 0xFF; // R1
+  DATA_BTN[14] = bitRead(DATA_BTN[1], 2) ? 0x00 : 0xFF; // L1
+  DATA_BTN[17] = bitRead(DATA_BTN[1], 1) ? 0x00 : 0xFF; // R2
+  DATA_BTN[16] = bitRead(DATA_BTN[1], 0) ? 0x00 : 0xFF; // L2
 }
 
 /**
@@ -204,7 +211,7 @@ void initConfigResponse () {
       break;
 
     case 0x42:
-      CONFIG = false;
+      NEXT_CONFIG = false;
       break;
 
     case 0x44:
@@ -256,7 +263,7 @@ void processConfigResponse (byte rx) {
   switch (CMD) {
     case 0x43:
       if (INDEX == 3 && rx == 0x00) {
-        CONFIG = false;
+        NEXT_CONFIG = false;
       }
       break;
 
@@ -324,7 +331,7 @@ void defaultRoutine () {
   } else if (CMD == 0x42 && LMOTOR_INDEX == INDEX) {
     LMOTOR_STATUS = rx;
   } else if (CMD == 0x43 && INDEX == 3 && rx == 0x01) {
-    CONFIG = true;
+    NEXT_CONFIG = true;
   }
 }
 
@@ -365,6 +372,9 @@ void resetStatus () {
   // Reset byte index
   INDEX = 0;
 
+  // Set required config mode
+  CONFIG = NEXT_CONFIG;
+
   // Calculate message length
   if (CONFIG) {
     LENGTH = 9;
@@ -389,7 +399,7 @@ void setup () {
   digitalWrite(PIN_ACK, HIGH);
 
   // TODO: Handle I2C and retrieve controller status
-  // syncPressureLelevs();
+  // syncPressureLevels();
 
   resetStatus();
 }
