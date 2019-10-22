@@ -1,372 +1,420 @@
-// Protocol details
-// https://gist.github.com/scanlime/5042071
-// http://store.curiousinventor.com/guides/PS2/
-// http://www.lynxmotion.com/images/files/ps2cmd01.txt
+#include <SPI.h>
 
-// Pins mapping
-// - D2 < CLK (blue)
-// - D3 < ATT (yellow)
-// - D4 < MOSI (orange)
-// - D5 > MISO (brown)
-// - D6 > ACK (green)
+#define PIN_CLK 2   // blue
+#define PIN_SS 3    // yellow
+#define PIN_MOSI 4  // orange
+#define PIN_MISO 5  // brown
+#define PIN_ACK 6   // green
 
-// Toggle between the digital and analog mode
-bool ANALOG = false;
-
-// Enable or disable the config/escape/native/wtf mode
+// Config mode (has precedence)
 bool CONFIG = false;
 
-// Enable or disable the user to switch mode with "Analog" button
+// Analog mode (pressure levels supported only on analog mode)
+bool ANALOG = false;
+
+// How many bytes have payload on analog mode
+uint8_t ANALOG_LENGTH = 6;
+
+//
+byte ANALOG_MAPPING[3] = { 0x3F, 0x00, 0x00 };
+
+// When true you cannot change the current mode by pressing the controller button
 bool LOCKED = false;
 
-// Enable or disable the small motor
-bool SMALL_MOTOR = false;
+// Detect broken communication (invalid header, invalid length)
+bool BROKEN = false;
 
-// Controls the vibration of the large motor
-unsigned char LARGE_MOTOR = 0x00;
+// Previous (negated) status of the SS pin
+bool ATTENTION = false;
 
-// Small Motor Index
-// The byte index into CMD buffer that contains the motor data
-unsigned int SMI = 22;
+// Expected communication length in bytes
+uint8_t LENGTH = 0;
 
-// Large Motor Index
-// The byte index into CMD buffer that contains the motor data
-unsigned int LMI = 22;
+// Current communication byte index
+uint8_t INDEX = 0;
 
-// Current mode code
-// - upper nibble
-// - - current mode
-// - lower nibble
-// - - payloadh length
-unsigned char MODE = 0x41;
+// Current command from PlayStation (header, second byte)
+byte CMD = 0x5A;
 
-// Payload length in bytes (MODE lower nibble * 2)
-unsigned int PAYLOAD_LENGTH = 2;
+// Small motor
+bool SMOTOR_STATUS = false;
+uint8_t SMOTOR_INDEX = 69;
 
-// MOSI (Master Out Slave In) buffer
-// This buffer will be populated with the incoming data from the PlayStation 2
-unsigned char CMD[21] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+// Large motor
+byte LMOTOR_STATUS = 0x00;
+uint8_t LMOTOR_INDEX = 69;
 
-// MISO (Master In Slave Out) buffer
-// This buffer contains the controller status
-// - 3 bytes  > header (ignored)
-// - 2 bytes  > digital buttons
-// - 4 bytes  > sticks position
-// - 12 bytes > pressure data
-unsigned char DAT[21] = { 0xFF, MODE, 0x5A, 0xFF, 0xFF, 0x7F, 0x7F, 0x7F, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+// Payload used during the config mode (calculated)
+byte DATA_CFG[6] = {
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x00
+};
 
-// Bitfield indicating which bytes in the response packet should be included
-unsigned char MAP[3] = { 0x03, 0x00, 0x00 };
+// Payload used during the other modes (represents buttons status)
+byte DATA_BTN[18] = {
+  // Digital buttons (0 is pressed)
+  0xFF, // Select, L3, R3, Start, Up, Right, Down, Left
+  0xFF, // L2, R2, L1, R1, Triangle, Circle, Cross, Square
+
+  // Analog sticks
+  0x7F, // Right X-axis
+  0x7F, // Right Y-axis
+  0x7F, // Left X-axis
+  0x7F, // Left Y-axis
+
+  // Pressure levels (0 is not pressed)
+  0x00, // Right
+  0x00, // Left
+  0x00, // Up
+  0x00, // Down
+  0x00, // Triangle
+  0x00, // Circle
+  0x00, // Cross
+  0x00, // Square
+  0x00, // L1
+  0x00, // R1
+  0x00, // L2
+  0x00  // R2
+};
 
 /**
- * Count set bits in an integer
+ * Sync pressure levels by reading from digital status
  */
+void syncPressureLelevs () {
+  DATA_BTN[ 7] = bitRead(DATA_BTN[0], 0) ? 0x00 : 0xFF; // Left
+  DATA_BTN[ 9] = bitRead(DATA_BTN[0], 1) ? 0x00 : 0xFF; // Down
+  DATA_BTN[ 6] = bitRead(DATA_BTN[0], 2) ? 0x00 : 0xFF; // Right
+  DATA_BTN[ 8] = bitRead(DATA_BTN[0], 3) ? 0x00 : 0xFF; // Up
+  DATA_BTN[13] = bitRead(DATA_BTN[1], 0) ? 0x00 : 0xFF; // Square
+  DATA_BTN[12] = bitRead(DATA_BTN[1], 1) ? 0x00 : 0xFF; // Cross
+  DATA_BTN[11] = bitRead(DATA_BTN[1], 2) ? 0x00 : 0xFF; // Circle
+  DATA_BTN[10] = bitRead(DATA_BTN[1], 3) ? 0x00 : 0xFF; // Triangle
+  DATA_BTN[15] = bitRead(DATA_BTN[1], 4) ? 0x00 : 0xFF; // R1
+  DATA_BTN[14] = bitRead(DATA_BTN[1], 5) ? 0x00 : 0xFF; // L1
+  DATA_BTN[17] = bitRead(DATA_BTN[1], 6) ? 0x00 : 0xFF; // R2
+  DATA_BTN[16] = bitRead(DATA_BTN[1], 7) ? 0x00 : 0xFF; // L2
+}
 
-unsigned int countSetBits(unsigned int n) {
-  if (n == 0) {
-    return 0;
-  } else {
-    return 1 + countSetBits(n & (n - 1));
+/**
+ * Count how many bits are set inside a byte
+ */
+uint8_t countBits (byte value) {
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < 8; i++) {
+    count += (value >> i) & 0x01;
+  }
+  return count;
+}
+
+/**
+ * Set ANALOG_LENGTH by calculating how many bits are set inside the mapping bytes (and check the max length)
+ */
+void updateAnalogLength () {
+  ANALOG_LENGTH = countBits(ANALOG_MAPPING[0]) + countBits(ANALOG_MAPPING[1]) + countBits(ANALOG_MAPPING[2]);
+  if (ANALOG_LENGTH > 18) {
+    ANALOG_LENGTH = 18;
   }
 }
 
 /**
- * Send a byte to MISO and receive a byte from MOSI
+ * Handle SPI slave duplex communication (send a byte and receive a byte)
  */
+byte byteRoutine (byte tx) {
+  byte rx = 0x00;
 
-unsigned char byteRoutine(unsigned char tx, bool ack = true) {
-  unsigned char rx = 0x00;
-
-  // transmit tx data and save incoming into rx
-  for (unsigned int i = 0; i < 8; i++) {
-    // wait CLK to be low (cycle start)
+  for (uint8_t i = 0; i < 8; i++) {
+    // Wait low CLK (start cycle)
     while (bitRead(PIND, 2));
 
-    // send the current bit to MISO pin
+    // Write MISO
     if (bitRead(tx, i)) {
       bitSet(PORTD, 5);
     } else {
       bitClear(PORTD, 5);
     }
 
-    // wait CLK to be high (half cycle)
+    // Wait high CLK (half cycle)
     while (!bitRead(PIND, 2));
 
-    // read MOSI pin and save
+    // Read MOSI
     if (bitRead(PIND, 4)) {
       bitSet(rx, i);
     }
   }
 
-  // restore MISO pin status
+  // Restore MISO
   bitSet(PORTD, 5);
 
-  // send ACK signal
-  if (ack) {
+  return rx;
+}
+
+/**
+ * Read current mode code
+ */
+byte getControllerMode () {
+  if (CONFIG) {
+    return 0xF3;
+  } else if (!ANALOG) {
+    return 0x41;
+  } else {
+    return 0x70 | (ANALOG_LENGTH  / 2);
+  }
+}
+
+/**
+ * Handle and validate header data
+ */
+void handleHeader () {
+  switch (INDEX) {
+    case 0:
+      BROKEN = byteRoutine(0xFF) != 0x01;
+      break;
+    case 1:
+      CMD = byteRoutine(getControllerMode());
+      break;
+    case 2:
+      BROKEN = byteRoutine(0x5A) != 0x00;
+      break;
+  }
+}
+
+/**
+ * Init response payload for the config mode
+ */
+void initConfigResponse () {
+  DATA_CFG[0] = 0x00;
+  DATA_CFG[1] = 0x00;
+  DATA_CFG[2] = 0x00;
+  DATA_CFG[3] = 0x00;
+  DATA_CFG[4] = 0x00;
+  DATA_CFG[5] = 0x00;
+
+  switch (CMD) {
+    case 0x41:
+      if (ANALOG) {
+        DATA_CFG[0] = ANALOG_MAPPING[0];
+        DATA_CFG[1] = ANALOG_MAPPING[1];
+        DATA_CFG[2] = ANALOG_MAPPING[2];
+      }
+      DATA_CFG[5] = 0x5A;
+      break;
+
+    case 0x42:
+      CONFIG = false;
+      break;
+
+    case 0x44:
+      ANALOG_LENGTH = 6;
+      ANALOG_MAPPING[0] = 0x3F;
+      ANALOG_MAPPING[1] = 0x00;
+      ANALOG_MAPPING[2] = 0x00;
+      break;
+
+    case 0x45:
+      DATA_CFG[0] = 0x03; // DualShock 2 controller constant
+      DATA_CFG[1] = 0x02;
+      DATA_CFG[2] = ANALOG ? 0x01 : 0x00;
+      DATA_CFG[3] = 0x02;
+      DATA_CFG[4] = 0x01;
+      DATA_CFG[5] = 0x00;
+      break;
+
+    case 0x47:
+      DATA_CFG[2] = 0x02;
+      break;
+
+    case 0x4D:
+      // Turn off and disable the small motor
+      SMOTOR_INDEX = 69;
+      SMOTOR_STATUS = false;
+      // Turn off and disable the large motor
+      LMOTOR_INDEX = 69;
+      LMOTOR_STATUS = 0x00;
+      // Setup response
+      DATA_CFG[0] = 0x00;
+      DATA_CFG[1] = 0x01;
+      DATA_CFG[2] = 0xFF;
+      DATA_CFG[3] = 0xFF;
+      DATA_CFG[4] = 0xFF;
+      DATA_CFG[5] = 0xFF;
+      break;
+
+    case 0x4F:
+      DATA_CFG[5] = 0x5A;
+      break;
+  }
+}
+
+/**
+ * Process response from PlayStation
+ */
+void processConfigResponse (byte rx) {
+  switch (CMD) {
+    case 0x43:
+      if (INDEX == 3 && rx == 0x00) {
+        CONFIG = false;
+      }
+      break;
+
+    case 0x44:
+      if (INDEX == 3 && rx == 0x01) {
+        ANALOG = true;
+      } else if (INDEX == 3 && rx == 0x00) {
+        ANALOG = false;
+      } else if (INDEX == 4 && rx == 0x03) {
+        LOCKED = true;
+      }
+      break;
+
+    case 0x46:
+      if (INDEX == 3 && rx == 0x00) {
+        DATA_CFG[3] = 0x02;
+        DATA_CFG[5] = 0x0A;
+      } else if (INDEX == 3 && rx == 0x01) {
+        DATA_CFG[5] = 0x14;
+      }
+      break;
+
+    case 0x4C:
+      if (INDEX == 3 && rx == 0x00) {
+        DATA_CFG[3] = 0x04;
+      } else if (INDEX == 3 && rx == 0x01) {
+        DATA_CFG[3] = 0x06;
+      }
+      break;
+
+    case 0x4D:
+      if (rx == 0x00) {
+        SMOTOR_INDEX = INDEX;
+      } else if (rx == 0x01) {
+        LMOTOR_INDEX = INDEX;
+      }
+      break;
+
+    case 0x4F:
+      if (INDEX >= 3 && INDEX <= 5) {
+        ANALOG_MAPPING[INDEX - 3] = rx;
+        ANALOG_LENGTH = countBits(ANALOG_MAPPING[0]) + countBits(ANALOG_MAPPING[1]) + countBits(ANALOG_MAPPING[2]);
+      }
+      break;
+  }
+}
+
+/**
+ * Handle communication during the config mode
+ */
+void configRoutine () {
+  if (INDEX == 3) {
+    initConfigResponse();
+  }
+  processConfigResponse(byteRoutine(DATA_CFG[INDEX - 3]));
+}
+
+/**
+ * Handle communication during the other modes
+ */
+void defaultRoutine () {
+  byte rx = byteRoutine(DATA_BTN[INDEX - 3]);
+  if (CMD == 0x42 && SMOTOR_INDEX == INDEX) {
+    SMOTOR_STATUS = rx == 0xFF;
+  } else if (CMD == 0x42 && LMOTOR_INDEX == INDEX) {
+    LMOTOR_STATUS = rx;
+  } else if (CMD == 0x43 && INDEX == 3 && rx == 0x01) {
+    CONFIG = true;
+  }
+}
+
+/**
+ * Handle full communication
+ */
+void handleCommunication () {
+  // Process current byte
+  if (INDEX >= LENGTH) {
+    BROKEN = true;
+  } else if (INDEX <= 2) {
+    handleHeader();
+  } else if (CONFIG) {
+    configRoutine();
+  } else {
+    defaultRoutine();
+  }
+
+  // Send ACK signal
+  if (!BROKEN) {
     delayMicroseconds(12);
     bitClear(PORTD, 6);
     delayMicroseconds(4);
     bitSet(PORTD, 6);
   }
 
-  // Return the received byte
-  return rx;
+  // Ready for the next incoming byte
+  INDEX++;
 }
 
 /**
- * Main routine, sends controller state data
+ * Reset current communication status (prepare for the next one)
  */
+void resetStatus () {
+  // Clean broken connection flag
+  BROKEN = false;
 
-void normalRoutine() {
-  unsigned int index = 3;
-  unsigned int length = index + PAYLOAD_LENGTH;
+  // Reset byte index
+  INDEX = 0;
 
-  // Send the header
-  CMD[0] = byteRoutine(0xFF);
-  CMD[1] = byteRoutine(MODE);
-  CMD[2] = byteRoutine(0x5A);
-
-  // Send controller state data
-  for (; index < length - 1; index++) {
-    CMD[index] = byteRoutine(DAT[index]);
-  }
-  CMD[index] = byteRoutine(DAT[index], false);
-
-  // Handle motors data
-  if (SMI < length) {
-    SMALL_MOTOR = CMD[SMI] == 0xFF;
-  }
-  if (LMI < length) {
-    LARGE_MOTOR = CMD[LMI];
-  }
-
-  // Handle request for config mode
-  if (CMD[1] == 0x43 && CMD[3] == 0x01) {
-    CONFIG = true;
-  } else if (CMD[1] != 0x42) {
-    // Not main polling cammand, this is probably wrong
+  // Calculate message length
+  if (CONFIG) {
+    LENGTH = 9;
+  } else if (!ANALOG) {
+    LENGTH = 5;
+  } else {
+    LENGTH = ANALOG_LENGTH + 3;
   }
 }
 
 /**
- * Routine when config mode is enabled (handle commands)
+ * setup
  */
+void setup () {
+  pinMode(PIN_ACK, OUTPUT);
+  pinMode(PIN_SS, INPUT);
+  pinMode(PIN_MOSI, INPUT);
+  pinMode(PIN_MISO, OUTPUT);
+  pinMode(PIN_CLK, INPUT);
 
-void configRoutine() {
-  // Send the header
-  CMD[0] = byteRoutine(0xFF);
-  CMD[1] = byteRoutine(0xF3);
-  CMD[2] = byteRoutine(0x5A);
+  digitalWrite(PIN_MISO, HIGH);
+  digitalWrite(PIN_ACK, HIGH);
 
-  // Send the other 6 bytes (in config mode the payload is fixed)
-  switch(CMD[1]) {
+  // TODO: Handle I2C and retrieve controller status
+  // syncPressureLelevs();
 
-    // Initialize pressure sensor
-    case 0x40:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x02);
-      CMD[6] = byteRoutine(0x00);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x5A, false);
-      // TODO:
-      // CMD > 01 40 00 | 00 02 00 00 00 00
-      // DAT > ff f3 5a | 00 00 02 00 00 5a
-      // (first payload byte of CMD, 0x00 - 0x0b, in the same order that the buttons are listed in the response packet)
-      // This command sets up parameters for a single pressure-sensitive button.
-      // Note that it is not required in order to use pressure sensitive buttons,
-      // and that this command by itself will not enable them.
-      // You still need to use command 0x4f to add them to the controller's results packet.
-      break;
-
-    // Find out what buttons are included in poll responses
-    case 0x41:
-      if (ANALOG) {
-        CMD[3] = byteRoutine(MAP[0]);
-        CMD[4] = byteRoutine(MAP[1]);
-        CMD[5] = byteRoutine(MAP[2]);
-      } else {
-        CMD[3] = byteRoutine(0x00);
-        CMD[4] = byteRoutine(0x00);
-        CMD[5] = byteRoutine(0x00);
-      }
-      CMD[6] = byteRoutine(0x00);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x5A, false);
-      break;
-
-    // Exit from config mode
-    case 0x43:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x00);
-      CMD[6] = byteRoutine(0x00);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00, false);
-      if (CMD[3] == 0x00) {
-        CONFIG = false;
-      }
-      break;
-
-    // Switch modes between digital and analog, also lock the current mode
-    case 0x44:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x00);
-      CMD[6] = byteRoutine(0x00);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00, false);
-      if (CMD[3] == 0x00) {
-        ANALOG = false;
-        MODE = 0x41;
-        PAYLOAD_LENGTH = 2;
-        MAP[0] = 0x03;
-        MAP[1] = 0x00;
-        MAP[2] = 0x00;
-      } else if (CMD[3] == 0x01) {
-        ANALOG = true;
-        MODE = 0x73;
-        PAYLOAD_LENGTH = 6;
-        MAP[0] = 0x3F;
-        MAP[1] = 0x00;
-        MAP[2] = 0x00;
-      }
-      LOCKED = CMD[4] == 0x03;
-      break;
-
-    // Get more status info
-    case 0x45:
-      CMD[3] = byteRoutine(0x03); // Hard coded DualShock 2 controller
-      CMD[4] = byteRoutine(0x02);
-      CMD[5] = byteRoutine(ANALOG ? 0x01 : 0x00);
-      CMD[6] = byteRoutine(0x02);
-      CMD[7] = byteRoutine(0x01);
-      CMD[8] = byteRoutine(0x00, false);
-      break;
-
-    // Send unknown const
-    case 0x46:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x00);
-      if (CMD[3] == 0x00) {
-        CMD[6] = byteRoutine(0x02);
-        CMD[7] = byteRoutine(0x00);
-        CMD[8] = byteRoutine(0x0A, false);
-      } else {
-        CMD[6] = byteRoutine(0x00);
-        CMD[7] = byteRoutine(0x00);
-        CMD[8] = byteRoutine(0x14, false);
-      }
-      break;
-
-    // Send unknown const
-    case 0x47:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x02);
-      CMD[6] = byteRoutine(0x00);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00, false);
-      break;
-
-    // Send unknown const
-    case 0x4C:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x00);
-      CMD[6] = byteRoutine(CMD[3] == 0x00 ? 0x04 : 0x06);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x00, false);
-      break;
-
-    // Map bytes in the 0x42 command to actuate the vibration motors
-    case 0x4D:
-      // TODO: send the current configuration
-      // SMI == i ? 0x00 : 0xFF
-      // LMI == i ? 0x01 : 0xFF
-      CMD[3] = byteRoutine(0xFF);
-      CMD[4] = byteRoutine(0xFF);
-      CMD[5] = byteRoutine(0xFF);
-      CMD[6] = byteRoutine(0xFF);
-      CMD[7] = byteRoutine(0xFF);
-      CMD[8] = byteRoutine(0xFF, false);
-      // Reset the motors mapping
-      SMI = 22;
-      LMI = 22;
-      // Save the received mapping
-      for (unsigned int i = 3; i < 9; i++) {
-        if (CMD[i] == 0x00) {
-          SMI = i;
-        } else if (CMD[i] == 0x01) {
-          LMI = i;
-        }
-      }
-      break;
-
-    // Add or remove analog response bytes from the main polling command
-    case 0x4F:
-      CMD[3] = byteRoutine(0x00);
-      CMD[4] = byteRoutine(0x00);
-      CMD[5] = byteRoutine(0x00);
-      CMD[6] = byteRoutine(0x00);
-      CMD[7] = byteRoutine(0x00);
-      CMD[8] = byteRoutine(0x5A, false);
-      if (ANALOG) {
-        // Update the payload length
-        PAYLOAD_LENGTH = countSetBits(CMD[3]) + countSetBits(CMD[4]) + countSetBits(CMD[5]);
-        // Update mode (only the lower nibble)
-        MODE &= B11110000;
-        MODE |= (PAYLOAD_LENGTH  / 2);
-        // Update mapping array
-        MAP[0] = CMD[3];
-        MAP[1] = CMD[4];
-        MAP[2] = CMD[5];
-      }
-      break;
-
-    // This is bad
-    default:
-      CMD[3] = byteRoutine(0x5A);
-      CMD[4] = byteRoutine(0x5A);
-      CMD[5] = byteRoutine(0x5A);
-      CMD[6] = byteRoutine(0x5A);
-      CMD[7] = byteRoutine(0x5A);
-      CMD[8] = byteRoutine(0x5A, false);
-      break;
-
-  }
+  resetStatus();
 }
 
 /**
- * Setup function, one shot
+ * loop
  */
-
-void setup() {
-  // CLK, ATT, MOSI as input
-  // MISO, ACK as output
-  DDRD = DDRD | B01100000;
-
-  // MISO normally high
-  // ACK normally high
-  PORTD = PORTD | B01100000;
-
-  // Disable all interrupts
-  noInterrupts();
-}
-
-/**
- * Loop function, the main program
- */
-
-void loop() {
-  // Watch the ATT pin
-  if (!bitRead(PIND, 3)) {
-    // Enter into the correct routine
-    if (CONFIG) {
-      configRoutine();
+void loop () {
+  // Handle current SS status
+  bool attention = !bitRead(PIND, 3);
+  if (attention != ATTENTION) {
+    if (attention) {
+      // Disable I2C interrupt
+      noInterrupts();
     } else {
-      normalRoutine();
+      // Reset status for the next communication
+      resetStatus();
+      // Enable I2C interrupt
+      interrupts();
     }
+  }
+  ATTENTION = attention;
+
+  // Process data
+  if (ATTENTION && !BROKEN) {
+    handleCommunication();
   }
 }
