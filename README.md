@@ -11,3 +11,4 @@ TODO
 - https://gist.github.com/scanlime/5042071
 - http://store.curiousinventor.com/guides/PS2/
 - http://www.lynxmotion.com/images/files/ps2cmd01.txt
+- http://blog.nearfuturelaboratory.com/category/psx/
