@@ -6,6 +6,8 @@
 #define PIN_MISO 5  // brown
 #define PIN_ACK 6   // green
 
+#define LOOPS 10000
+
 // Config mode (has precedence)
 bool CONFIG = false;
 
@@ -65,7 +67,7 @@ byte DATA_BTN[18] = {
 
   // Square, Cross, Circle, Triangle, R1, L1 ,R2, L2 (0 is pressed)
   // 0xFE > L2 is pressed
-  0xFF,
+  0xBF,
 
   // Analog sticks
   0x7F, // Right X-axis,  0x00 = Left,  0xFF = Right
@@ -73,7 +75,7 @@ byte DATA_BTN[18] = {
   0x7F, // Left X-axis,   0x00 = Left,  0xFF = Right
   0x7F, // Left Y-axis,   0x00 = Up,    0xFF = Down
 
-  // Pressure levels (0 is not pressed)
+  // Pressure levels (0xFF is fully pressed)
   0x00, // Right
   0x00, // Left
   0x00, // Up
@@ -131,29 +133,62 @@ void updateAnalogLength () {
  * Handle SPI slave duplex communication (send a byte and receive a byte)
  */
 byte byteRoutine (byte tx) {
+  // Received byte
   byte rx = 0x00;
 
-  for (uint8_t i = 0; i < 8; i++) {
-    // Wait low CLK (start cycle)
-    while (bitRead(PIND, 2));
+  // Bit index
+  uint8_t i = 0;
 
-    // Write MISO
-    if (bitRead(tx, i)) {
-      bitSet(PORTD, 5);
-    } else {
-      bitClear(PORTD, 5);
+  // Previous register status
+  byte preg = PIND;
+
+  // Current register status
+  byte creg;
+
+  // Previous CLK status
+  bool pclk;
+
+  // Current CLK status
+  bool cclk;
+
+  // Loops counter
+  uint8_t loops = 0;
+
+  while (i < 8) {
+    // Save current register status
+    creg = PIND;
+
+    // Read CLK status
+    pclk = bitRead(preg, 2);
+    cclk = bitRead(creg, 2);
+
+    if (pclk && !cclk) { // CLK falling
+      // Write MISO
+      if (bitRead(tx, i)) {
+        bitSet(PORTD, 5);
+      } else {
+        bitClear(PORTD, 5);
+      }
+    } else if (!pclk && cclk) { // CLK rising
+      // Read MOSI
+      if (bitRead(creg, 4)) {
+        bitSet(rx, i);
+      }
+      // Next bit
+      i++;
     }
 
-    // Wait high CLK (half cycle)
-    while (!bitRead(PIND, 2));
+    // Update previous register status
+    preg = creg;
 
-    // Read MOSI
-    if (bitRead(PIND, 4)) {
-      bitSet(rx, i);
+    // Ensure working connection
+    if (++loops >= LOOPS) {
+      i = 8;
+      BROKEN = true;
     }
   }
 
-  // Restore MISO
+  // Restore MISO status
   bitSet(PORTD, 5);
 
   return rx;
