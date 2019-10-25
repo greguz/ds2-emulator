@@ -1,3 +1,4 @@
+#include <digitalWriteFast.h> // https://github.com/NicksonYap/digitalWriteFast
 #include <Wire.h>
 
 #define PIN_CLK 2   // blue
@@ -140,47 +141,39 @@ byte byteRoutine (byte tx) {
   // Bit index
   uint8_t i = 0;
 
-  // Previous register status
-  byte preg = PIND;
-
-  // Current register status
-  byte creg;
-
   // Previous CLK status
   bool pclk;
 
   // Current CLK status
-  bool cclk;
+  bool cclk = digitalReadFast(PIN_CLK);
 
   // Loops counter
   uint8_t loops = 0;
 
   while (i < 8) {
-    // Save current register status
-    creg = PIND;
+    // Read current CLK status
+    cclk = digitalReadFast(PIN_CLK);
 
-    // Read CLK status
-    pclk = bitRead(preg, 2);
-    cclk = bitRead(creg, 2);
-
-    if (pclk && !cclk) { // CLK falling
-      // Write MISO
-      if (bitRead(tx, i)) {
-        bitSet(PORTD, 5);
+    if (pclk != cclk) {
+      if (cclk) {
+        // Read MOSI
+        if (digitalReadFast(PIN_MOSI)) {
+          bitSet(rx, i);
+        }
+        // Next bit
+        i++;
       } else {
-        bitClear(PORTD, 5);
+        // Write MISO
+        if (bitRead(tx, i)) {
+          digitalWriteFast(PIN_MISO, HIGH);
+        } else {
+          digitalWriteFast(PIN_MISO, LOW);
+        }
       }
-    } else if (!pclk && cclk) { // CLK rising
-      // Read MOSI
-      if (bitRead(creg, 4)) {
-        bitSet(rx, i);
-      }
-      // Next bit
-      i++;
     }
 
-    // Update previous register status
-    preg = creg;
+    // Update previous CLK status
+    pclk = cclk;
 
     // Ensure working connection
     if (++loops >= MAX_LOOPS) {
@@ -190,7 +183,7 @@ byte byteRoutine (byte tx) {
   }
 
   // Restore MISO status
-  bitSet(PORTD, 5);
+  digitalWriteFast(PIN_MISO, HIGH);
 
   return rx;
 }
@@ -389,9 +382,9 @@ void handleCommunication () {
   // Send ACK signal
   if (!BROKEN) {
     delayMicroseconds(12);
-    bitClear(PORTD, 6);
+    digitalWriteFast(PIN_ACK, LOW);
     delayMicroseconds(4);
-    bitSet(PORTD, 6);
+    digitalWriteFast(PIN_ACK, HIGH);
   }
 
   // Ready for the next incoming byte
@@ -463,7 +456,7 @@ void setup () {
  */
 void loop () {
   // Handle current SS status
-  bool attention = !bitRead(PIND, 3);
+  bool attention = digitalReadFast(PIN_SS) == LOW;
   if (attention != ATTENTION) {
     if (attention) {
       // Disable I2C interrupt

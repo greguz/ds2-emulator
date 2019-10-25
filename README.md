@@ -2,6 +2,10 @@
 
 Emulate a DS2 controller with Arduino Uno.
 
+## Setup
+
+You need to install [this](https://github.com/NicksonYap/digitalWriteFast) library.
+
 ## Wirings
 
 TODO
