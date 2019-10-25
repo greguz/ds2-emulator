@@ -1,12 +1,10 @@
-#include <SPI.h>
-
 #define PIN_CLK 2   // blue
 #define PIN_SS 3    // yellow
 #define PIN_MOSI 4  // orange
 #define PIN_MISO 5  // brown
 #define PIN_ACK 6   // green
 
-#define LOOPS 10000
+#define MAX_LOOPS 10000
 
 // Config mode (has precedence)
 bool CONFIG = false;
@@ -67,7 +65,7 @@ byte DATA_BTN[18] = {
 
   // Square, Cross, Circle, Triangle, R1, L1 ,R2, L2 (0 is pressed)
   // 0xFE > L2 is pressed
-  0xBF,
+  0xFF,
 
   // Analog sticks
   0x7F, // Right X-axis,  0x00 = Left,  0xFF = Right
@@ -182,7 +180,7 @@ byte byteRoutine (byte tx) {
     preg = creg;
 
     // Ensure working connection
-    if (++loops >= LOOPS) {
+    if (++loops >= MAX_LOOPS) {
       i = 8;
       BROKEN = true;
     }
