@@ -156,6 +156,7 @@ byte byteRoutine (byte tx) {
 
     if (pclk != cclk) {
       if (cclk) {
+        // CLK is RISING
         // Read MOSI
         if (digitalReadFast(PIN_MOSI)) {
           bitSet(rx, i);
@@ -163,6 +164,7 @@ byte byteRoutine (byte tx) {
         // Next bit
         i++;
       } else {
+        // CLK is FALLING
         // Write MISO
         if (bitRead(tx, i)) {
           digitalWriteFast(PIN_MISO, HIGH);
@@ -170,10 +172,10 @@ byte byteRoutine (byte tx) {
           digitalWriteFast(PIN_MISO, LOW);
         }
       }
-    }
 
-    // Update previous CLK status
-    pclk = cclk;
+      // Update previous CLK status
+      pclk = cclk;
+    }
 
     // Ensure working connection
     if (++loops >= MAX_LOOPS) {
