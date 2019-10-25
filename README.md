@@ -1,6 +1,13 @@
-# DualShock 2 emulator for Arduino Uno
+# DualShock 2 emulator for Arduino
 
-Emulate a DS2 controller with Arduino Uno.
+Emulate a DualShock 2 controller with _something_, where _something_ may be:
+
+- Arduino Zero
+- Arduino Uno
+- Arduino Due
+- Arduino Mega
+- Arduino Leonardo
+- Arduino with ATmega644 or Atmega644P chip
 
 ## Setup
 
