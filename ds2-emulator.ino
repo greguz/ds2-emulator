@@ -1,3 +1,5 @@
+#include <Wire.h>
+
 #define PIN_CLK 2   // blue
 #define PIN_SS 3    // yellow
 #define PIN_MOSI 4  // orange
@@ -5,6 +7,7 @@
 #define PIN_ACK 6   // green
 
 #define MAX_LOOPS 10000
+#define I2C_ADDRESS 8
 
 // Config mode (has precedence)
 bool CONFIG = false;
@@ -181,8 +184,8 @@ byte byteRoutine (byte tx) {
 
     // Ensure working connection
     if (++loops >= MAX_LOOPS) {
-      i = 8;
       BROKEN = true;
+      break;
     }
   }
 
@@ -419,21 +422,39 @@ void resetStatus () {
 }
 
 /**
+ * I2C interrupt
+ */
+void receiveEvent (int count) {
+  byte data;
+  for (uint8_t i = 0; i < count; i++) {
+    data = Wire.read();
+    if (i < 6) {
+      DATA_BTN[i] = data;
+    }
+  }
+  syncPressureLevels();
+}
+
+/**
  * setup
  */
 void setup () {
+  // Setup inputs and outputs
   pinMode(PIN_ACK, OUTPUT);
-  pinMode(PIN_SS, INPUT);
-  pinMode(PIN_MOSI, INPUT);
+  pinMode(PIN_SS, INPUT_PULLUP);
+  pinMode(PIN_MOSI, INPUT_PULLUP);
   pinMode(PIN_MISO, OUTPUT);
-  pinMode(PIN_CLK, INPUT);
+  pinMode(PIN_CLK, INPUT_PULLUP);
 
+  // Initial output status
   digitalWrite(PIN_MISO, HIGH);
   digitalWrite(PIN_ACK, HIGH);
 
-  // TODO: Handle I2C and retrieve controller status
-  // syncPressureLevels();
+  // Setup I2C communication
+  Wire.begin(I2C_ADDRESS);
+  Wire.onReceive(receiveEvent);
 
+  // Init DS2 status
   resetStatus();
 }
 
