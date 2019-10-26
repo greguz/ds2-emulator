@@ -7,8 +7,10 @@
 #define PIN_MISO 5  // brown
 #define PIN_ACK 6   // green
 
-#define MAX_LOOPS 10000
 #define I2C_ADDRESS 8
+
+// Max loops expected to process a single byte during the SPI/DS2 communication (tested with Arduino Uno and Leonardo)
+#define MAX_LOOPS 250
 
 // Config mode (has precedence)
 bool CONFIG = false;
