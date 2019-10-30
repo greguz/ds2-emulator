@@ -1,6 +1,6 @@
 # DualShock 2 emulator for Arduino Uno
 
-Emulate a DualShock 2 controller with Arduino Uno.
+Emulate a DualShock 2 controller with Arduino Uno and control It throught I2C bus.
 
 ## Hardware
 
@@ -23,6 +23,43 @@ Install [this](https://github.com/NicksonYap/digitalWriteFast) library.
 | MOSI     | 11      | Orange |
 | MISO     | 12      | Brown  |
 | SCK      | 13      | Blue   |
+| SDA      | A4      | -      |
+| SCL      | A5      | -      |
+
+## I2C
+
+Default address: **8**
+
+| Byte | Target             | Details               |
+| ---- | ------------------ | --------------------- |
+| 0    | Buttons            | see below             |
+| 1    | Buttons            | see below             |
+| 2    | Right stick X-axis | 0x00=Left, 0xFF=Right |
+| 3    | Right stick Y-axis | 0x00=Up, 0xFF=Down    |
+| 4    | Left stick X-axis  | 0x00=Left, 0xFF=Right |
+| 5    | Left stick Y-axis  | 0x00=Up, 0xFF=Down    |
+
+### Byte 0 (LSB)
+
+- Select
+- L3
+- R3
+- Start
+- Up
+- Right
+- Down
+- Left
+
+### Byte 1 (LSB)
+
+- L2
+- R2
+- L1
+- R1
+- Triangle
+- Circle
+- Cross
+- Square
 
 ## Resources
 
