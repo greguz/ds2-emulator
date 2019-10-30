@@ -345,7 +345,7 @@ ISR (SPI_STC_vect) {
 }
 
 /**
- * I2C interrupt
+ * I2C incoming data interrupt
  */
 void receiveEvent (int count) {
   byte data;
@@ -356,6 +356,18 @@ void receiveEvent (int count) {
     }
   }
   syncPressureLevels();
+}
+
+/**
+ * I2C outcoming data interrupt
+ */
+void requestEvent () {
+  byte data = 0x00;
+  bitWrite(data, 0, ANALOG);
+  bitWrite(data, 1, SMOTOR_STATUS);
+  bitWrite(data, 2, LOCKED);
+  Wire.write(data);
+  Wire.write(LMOTOR_STATUS);
 }
 
 /**
@@ -374,6 +386,7 @@ void setup () {
   // I2C setup
   Wire.begin(I2C_ADDRESS);
   Wire.onReceive(receiveEvent);
+  Wire.onRequest(requestEvent);
 
   // Configure SPI mode (DORD=1, CPOL=1, CPHA=1)
   SPCR |= bit (SPE);
