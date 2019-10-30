@@ -1,37 +1,38 @@
 #include <digitalWriteFast.h> // https://github.com/NicksonYap/digitalWriteFast
+#include <SPI.h>
 #include <Wire.h>
 
-#define PIN_CLK 2   // blue
-#define PIN_SS 3    // yellow
-#define PIN_MOSI 4  // orange
-#define PIN_MISO 5  // brown
-#define PIN_ACK 6   // green
+/**
+ * Arduino Uno pinout (and remove the resistor on pin 13)
+ */
+#define ACK    9  // green
+//      SS    10  // yellow
+//      MOSI  11  // orange
+//      MISO  12  // brown
+//      SCK   13  // blue
 
+/**
+ * I2C slave address
+ */
 #define I2C_ADDRESS 8
-
-// Max loops expected to process a single byte during the SPI/DS2 communication (tested with Arduino Uno and Leonardo)
-#define MAX_LOOPS 250
 
 // Config mode (has precedence)
 bool CONFIG = false;
 
 //
-bool NEXT_CONFIG = false;
+volatile bool NEXT_CONFIG = false;
 
 // Analog mode (pressure levels supported only on analog mode)
-bool ANALOG = false;
+volatile bool ANALOG = false;
 
 // How many bytes have payload on analog mode
-uint8_t ANALOG_LENGTH = 6;
+volatile uint8_t ANALOG_LENGTH = 6;
 
 //
 byte ANALOG_MAPPING[3] = { 0x3F, 0x00, 0x00 };
 
 // When true you cannot change the current mode by pressing the controller button
-bool LOCKED = false;
-
-// Detect broken communication (invalid header, invalid length)
-bool BROKEN = false;
+volatile bool LOCKED = false;
 
 // Previous (negated) status of the SS pin
 bool ATTENTION = false;
@@ -43,7 +44,7 @@ uint8_t LENGTH = 0;
 uint8_t INDEX = 0;
 
 // Current command from PlayStation (header, second byte)
-byte CMD = 0x5A;
+volatile byte CMD = 0x5A;
 
 // Small motor
 bool SMOTOR_STATUS = false;
@@ -52,6 +53,9 @@ uint8_t SMOTOR_INDEX = 69;
 // Large motor
 byte LMOTOR_STATUS = 0x00;
 uint8_t LMOTOR_INDEX = 69;
+
+//
+bool SEND_ACK = false;
 
 // Payload used during the config mode (calculated)
 byte DATA_CFG[6] = {
@@ -67,7 +71,7 @@ byte DATA_CFG[6] = {
 byte DATA_BTN[18] = {
   // Left, Down, Right, Up, Start, R3, L3, Select (0 is pressed)
   // 0xFE > Select is pressed
-  0xFF,
+  0xBF,
 
   // Square, Cross, Circle, Triangle, R1, L1 ,R2, L2 (0 is pressed)
   // 0xFE > L2 is pressed
@@ -134,65 +138,6 @@ void updateAnalogLength () {
 }
 
 /**
- * Handle SPI slave duplex communication (send a byte and receive a byte)
- */
-byte byteRoutine (byte tx) {
-  // Received byte
-  byte rx = 0x00;
-
-  // Bit index
-  uint8_t i = 0;
-
-  // Previous CLK status
-  bool pclk;
-
-  // Current CLK status
-  bool cclk = digitalReadFast(PIN_CLK);
-
-  // Loops counter
-  uint8_t loops = 0;
-
-  while (i < 8) {
-    // Read current CLK status
-    cclk = digitalReadFast(PIN_CLK);
-
-    if (pclk != cclk) {
-      if (cclk) {
-        // CLK is RISING
-        // Read MOSI
-        if (digitalReadFast(PIN_MOSI)) {
-          bitSet(rx, i);
-        }
-        // Next bit
-        i++;
-      } else {
-        // CLK is FALLING
-        // Write MISO
-        if (bitRead(tx, i)) {
-          digitalWriteFast(PIN_MISO, HIGH);
-        } else {
-          digitalWriteFast(PIN_MISO, LOW);
-        }
-      }
-
-      // Update previous CLK status
-      pclk = cclk;
-    }
-
-    // Ensure working connection
-    if (++loops >= MAX_LOOPS) {
-      BROKEN = true;
-      break;
-    }
-  }
-
-  // Restore MISO status
-  digitalWriteFast(PIN_MISO, HIGH);
-
-  return rx;
-}
-
-/**
  * Read current mode code
  */
 byte getControllerMode () {
@@ -202,23 +147,6 @@ byte getControllerMode () {
     return 0x41;
   } else {
     return 0x70 | (ANALOG_LENGTH  / 2);
-  }
-}
-
-/**
- * Handle and validate header data
- */
-void handleHeader () {
-  switch (INDEX) {
-    case 0:
-      BROKEN = byteRoutine(0xFF) != 0x01;
-      break;
-    case 1:
-      CMD = byteRoutine(getControllerMode());
-      break;
-    case 2:
-      BROKEN = byteRoutine(0x5A) != 0x00;
-      break;
   }
 }
 
@@ -345,65 +273,14 @@ void processConfigResponse (byte rx) {
 }
 
 /**
- * Handle communication during the config mode
- */
-void configRoutine () {
-  if (INDEX == 3) {
-    initConfigResponse();
-  }
-  processConfigResponse(byteRoutine(DATA_CFG[INDEX - 3]));
-}
-
-/**
- * Handle communication during the other modes
- */
-void defaultRoutine () {
-  byte rx = byteRoutine(DATA_BTN[INDEX - 3]);
-  if (CMD == 0x42 && SMOTOR_INDEX == INDEX) {
-    SMOTOR_STATUS = rx == 0xFF;
-  } else if (CMD == 0x42 && LMOTOR_INDEX == INDEX) {
-    LMOTOR_STATUS = rx;
-  } else if (CMD == 0x43 && INDEX == 3 && rx == 0x01) {
-    NEXT_CONFIG = true;
-  }
-}
-
-/**
- * Handle full communication
- */
-void handleCommunication () {
-  // Process current byte
-  if (INDEX >= LENGTH) {
-    BROKEN = true;
-  } else if (INDEX <= 2) {
-    handleHeader();
-  } else if (CONFIG) {
-    configRoutine();
-  } else {
-    defaultRoutine();
-  }
-
-  // Send ACK signal
-  if (!BROKEN) {
-    delayMicroseconds(12);
-    digitalWriteFast(PIN_ACK, LOW);
-    delayMicroseconds(4);
-    digitalWriteFast(PIN_ACK, HIGH);
-  }
-
-  // Ready for the next incoming byte
-  INDEX++;
-}
-
-/**
  * Reset current communication status (prepare for the next one)
  */
 void resetStatus () {
-  // Clean broken connection flag
-  BROKEN = false;
-
   // Reset byte index
   INDEX = 0;
+
+  // Reset command
+  CMD = 0x5A;
 
   // Set required config mode
   CONFIG = NEXT_CONFIG;
@@ -416,6 +293,55 @@ void resetStatus () {
   } else {
     LENGTH = ANALOG_LENGTH + 3;
   }
+}
+
+/**
+ * TODO
+ */
+byte getResponseByte () {
+  if (INDEX >= LENGTH) {
+    return 0xFF;
+  } else if (INDEX == 0) {
+    return getControllerMode();
+  } else if (INDEX == 1) {
+    return 0x5A;
+  } else if (CONFIG) {
+    return DATA_CFG[INDEX - 2];
+  } else {
+    return DATA_BTN[INDEX - 2];
+  }
+}
+
+/**
+ * SPI interrupt routine
+ */
+ISR (SPI_STC_vect) {
+  // Process received byte
+  byte rx = SPDR;
+  if (INDEX == 1) {
+    CMD = rx;
+    if (CONFIG) {
+      initConfigResponse();
+    }
+  }
+  if (CONFIG) {
+    processConfigResponse(rx);
+  } else if (CMD == 0x42 && SMOTOR_INDEX == INDEX) {
+    SMOTOR_STATUS = rx == 0xFF;
+  } else if (CMD == 0x42 && LMOTOR_INDEX == INDEX) {
+    LMOTOR_STATUS = rx;
+  } else if (CMD == 0x43 && INDEX == 3 && rx == 0x01) {
+    NEXT_CONFIG = true;
+  }
+
+  // Set next response byte
+  SPDR = getResponseByte();
+
+  // Ready for the next incoming byte
+  INDEX++;
+
+  // Schedule ACK signal
+  SEND_ACK = true;
 }
 
 /**
@@ -436,22 +362,30 @@ void receiveEvent (int count) {
  * setup
  */
 void setup () {
-  // Setup inputs and outputs
-  pinMode(PIN_ACK, OUTPUT);
-  pinMode(PIN_SS, INPUT_PULLUP);
-  pinMode(PIN_MOSI, INPUT_PULLUP);
-  pinMode(PIN_MISO, OUTPUT);
-  pinMode(PIN_CLK, INPUT_PULLUP);
+  // Inputs
+  pinMode(MOSI, INPUT);
+  pinMode(SCK, INPUT);
+  pinMode(SS, INPUT);
 
-  // Initial output status
-  digitalWrite(PIN_MISO, HIGH);
-  digitalWrite(PIN_ACK, HIGH);
+  // Outputs
+  pinMode(MISO, OUTPUT);  
+  pinMode(ACK, OUTPUT);
 
-  // Setup I2C communication
+  // I2C setup
   Wire.begin(I2C_ADDRESS);
   Wire.onReceive(receiveEvent);
 
-  // Init DS2 status
+  // Configure SPI mode (DORD=1, CPOL=1, CPHA=1)
+  SPCR |= bit (SPE);
+  SPCR |= 0x2C;
+
+  // Init outputs
+  digitalWrite(ACK, HIGH);
+
+  // Enable SPI interrupt
+  SPCR |= _BV(SPIE);
+
+  // Init controller status
   resetStatus();
 }
 
@@ -459,23 +393,18 @@ void setup () {
  * loop
  */
 void loop () {
-  // Handle current SS status
-  bool attention = digitalReadFast(PIN_SS) == LOW;
-  if (attention != ATTENTION) {
-    if (attention) {
-      // Disable I2C interrupt
-      noInterrupts();
-    } else {
-      // Reset status for the next communication
-      resetStatus();
-      // Enable I2C interrupt
-      interrupts();
-    }
+  // Reset status when there's no attention
+  bool attention = !digitalReadFast(SS);
+  if (!attention && ATTENTION) {
+    resetStatus();
   }
   ATTENTION = attention;
 
-  // Process data
-  if (ATTENTION && !BROKEN) {
-    handleCommunication();
+  // Send ACK signal when required
+  if (SEND_ACK) {
+    SEND_ACK = false;
+    digitalWriteFast(ACK, LOW);
+    delayMicroseconds(4);
+    digitalWriteFast(ACK, HIGH);
   }
 }
