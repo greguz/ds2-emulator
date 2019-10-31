@@ -71,7 +71,7 @@ byte DATA_CFG[6] = {
 byte DATA_BTN[18] = {
   // Left, Down, Right, Up, Start, R3, L3, Select (0 is pressed)
   // 0xFE > Select is pressed
-  0xBF,
+  0xFF,
 
   // Square, Cross, Circle, Triangle, R1, L1 ,R2, L2 (0 is pressed)
   // 0xFE > L2 is pressed
@@ -380,7 +380,7 @@ void setup () {
   pinMode(SS, INPUT);
 
   // Outputs
-  pinMode(MISO, OUTPUT);  
+  pinMode(MISO, OUTPUT);
   pinMode(ACK, OUTPUT);
 
   // I2C setup
