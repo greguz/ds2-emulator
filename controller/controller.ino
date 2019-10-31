@@ -3,16 +3,15 @@
 
 #define I2C_ADDRESS     8
 
-#define PIN_ATTENTION   10
+#define PIN_CROSS       4
+#define PIN_CIRCLE      5
+#define PIN_TRIANGLE    6
+#define PIN_SQUARE      7
 
-#define PIN_CROSS       2
-#define PIN_CIRCLE      3
-#define PIN_TRIANGLE    4
-#define PIN_SQUARE      5
-#define PIN_UP          6
-#define PIN_DOWN        7
-#define PIN_LEFT        8
-#define PIN_RIGH        9
+#define PIN_UP          8
+#define PIN_DOWN        9
+#define PIN_LEFT        10
+#define PIN_RIGH        11
 
 void _write () {
   byte tx[2] = { 0xFF, 0xFF };
@@ -36,9 +35,7 @@ void _write () {
   Wire.endTransmission();
 }
 
-void setup() {
-  pinMode(PIN_ATTENTION, INPUT);
-
+void setup () {
   pinMode(PIN_CROSS, INPUT_PULLUP);
   pinMode(PIN_CIRCLE, INPUT_PULLUP);
   pinMode(PIN_TRIANGLE, INPUT_PULLUP);
@@ -51,9 +48,7 @@ void setup() {
   Wire.begin();
 }
 
-void loop() {
-  if (digitalReadFast(PIN_ATTENTION)) {
-    _write();
-    delay(100);
-  }
+void loop () {
+  _write();
+  delay(25);
 }
