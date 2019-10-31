@@ -39,7 +39,9 @@ Default address: **8**
 | 4    | Left stick X-axis  | 0x00=Left, 0xFF=Right |
 | 5    | Left stick Y-axis  | 0x00=Up, 0xFF=Down    |
 
-### Byte 0 (LSB)
+### Byte 0
+
+**LSB, active low.**
 
 - Select
 - L3
@@ -50,7 +52,9 @@ Default address: **8**
 - Down
 - Left
 
-### Byte 1 (LSB)
+### Byte 1
+
+**LSB, active low.**
 
 - L2
 - R2
