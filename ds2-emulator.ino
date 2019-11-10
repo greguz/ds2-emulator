@@ -167,8 +167,8 @@ void initConfigResponse () {
         DATA_CFG[0] = ANALOG_MAPPING[0];
         DATA_CFG[1] = ANALOG_MAPPING[1];
         DATA_CFG[2] = ANALOG_MAPPING[2];
+        DATA_CFG[5] = 0x5A;
       }
-      DATA_CFG[5] = 0x5A;
       break;
 
     case 0x42:
@@ -193,6 +193,7 @@ void initConfigResponse () {
 
     case 0x47:
       DATA_CFG[2] = 0x02;
+      DATA_CFG[4] = 0x01;
       break;
 
     case 0x4D:
@@ -203,8 +204,8 @@ void initConfigResponse () {
       LMOTOR_INDEX = 69;
       LMOTOR_STATUS = 0x00;
       // Setup response
-      DATA_CFG[0] = 0x00;
-      DATA_CFG[1] = 0x01;
+      DATA_CFG[0] = 0xFF;
+      DATA_CFG[1] = 0xFF;
       DATA_CFG[2] = 0xFF;
       DATA_CFG[3] = 0xFF;
       DATA_CFG[4] = 0xFF;
@@ -240,9 +241,13 @@ void processConfigResponse (byte rx) {
 
     case 0x46:
       if (INDEX == 3 && rx == 0x00) {
+        DATA_CFG[2] = 0x01;
         DATA_CFG[3] = 0x02;
         DATA_CFG[5] = 0x0A;
       } else if (INDEX == 3 && rx == 0x01) {
+        DATA_CFG[2] = 0x01;
+        DATA_CFG[3] = 0x01;
+        DATA_CFG[4] = 0x01;
         DATA_CFG[5] = 0x14;
       }
       break;
@@ -251,7 +256,7 @@ void processConfigResponse (byte rx) {
       if (INDEX == 3 && rx == 0x00) {
         DATA_CFG[3] = 0x04;
       } else if (INDEX == 3 && rx == 0x01) {
-        DATA_CFG[3] = 0x06;
+        DATA_CFG[3] = 0x07;
       }
       break;
 
@@ -276,6 +281,9 @@ void processConfigResponse (byte rx) {
  * Reset current communication status (prepare for the next one)
  */
 void resetStatus () {
+  // First SPI byte sent
+  SPDR = 0xFF;
+
   // Reset byte index
   INDEX = 0;
 
